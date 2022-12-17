@@ -4,14 +4,16 @@
 import io
 import os
 import sys
+import numpy as np
+import json
 import traceback
 import warnings
 from tempfile import NamedTemporaryFile
 from typing import Union
 
 import pandas as pd
-from fastapi import Depends, FastAPI, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, UploadFile, status, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 
 warnings.filterwarnings("ignore")
 
@@ -54,8 +56,86 @@ async def ping() -> dict:
     }
 
 
-@app.post("/infer", tags=["inference"], response_class=FileResponse)
-async def infer(
+@app.post("/infer", tags=["inference", "json"], response_class=JSONResponse)
+async def infer(input_: dict) -> dict:
+    """Generate inferences on a single batch of data sent as JSON object.
+    In this sample server, we take data as JSON, convert
+    it to a pandas data frame for internal use and then convert the predictions back to JSON .
+    """
+
+    try:
+        # Do the prediction
+        data = pd.DataFrame.from_records(input_["instances"])
+        print(f"Invoked with {data.shape[0]} records")
+        predictions = model_server.predict_to_json(data)
+        return {
+            "predictions": predictions,
+        }
+    except Exception as err:
+        # Write out an error file. This will be returned as the failureReason to the client.
+        trc = traceback.format_exc()
+        with open(failure_path, "w") as s:
+            s.write("Exception during inference: " + str(err) + "\n" + trc)
+        # Printing this causes the exception to be in the training job logs, as well.
+        print("Exception during inference: " + str(err) + "\n" + trc, file=sys.stderr)
+        # A non-zero exit code causes the training job to be marked as Failed.
+        return {
+            "success": False,
+            "message": f"Exception during inference: {str(err)} (check serve_failure.txt file for more details)",
+        }
+
+
+# @app.post("/infer", tags=["inference", "json"])
+# async def infer(input_) -> dict:
+#     """Generate inferences on a single batch of data sent as JSON object.
+#     In this sample server, we take data as JSON, convert
+#     it to a pandas data frame for internal use and then convert the predictions back to JSON .
+#     """
+#     return {
+#         "success": True,
+#         "message": "hello",
+#     }
+
+# data = None
+
+# if not input_.content_type == "application/json":
+#     raise HTTPException(
+#         status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+#         detail=f"Content type {input_.content_type} is unsupported. Only 'application/json' supported.",
+#     )
+
+# print(f"Invoked with {data.shape[0]} records")
+
+# # Do the prediction
+# try:
+#     print(input_)
+#     req_data_dict = input_.dict()
+#     # data = pd.DataFrame.from_records(req_data_dict["instances"])
+#     # predictions = model_server.predict(data, data_schema)
+#     # # Convert from dataframe to CSV
+#     # predictions.to_csv(temp, index=False)
+#     # return FileResponse(temp, media_type="text/csv")
+#     prediction = 100
+#     return {
+#         "data": 123,
+#         "prediction": np.round(prediction, 4),
+#     }
+# except Exception as err:
+#     # Write out an error file. This will be returned as the failureReason to the client.
+#     trc = traceback.format_exc()
+#     with open(failure_path, "w") as s:
+#         s.write("Exception during inference: " + str(err) + "\n" + trc)
+#     # Printing this causes the exception to be in the training job logs, as well.
+#     print("Exception during inference: " + str(err) + "\n" + trc, file=sys.stderr)
+#     # A non-zero exit code causes the training job to be marked as Failed.
+#     return {
+#         "success": False,
+#         "message": f"Exception during inference: {str(err)} (check failure file for more details)",
+#     }
+
+
+@app.post("/infer_file", tags=["inference", "csv"], response_class=FileResponse)
+async def infer_file(
     input: UploadFile = File(...), temp=Depends(gen_temp_file)
 ) -> Union[FileResponse, dict]:
     """Do an inference on a single batch of data. In this sample server, we take data as CSV, convert
@@ -79,7 +159,7 @@ async def infer(
 
     # Do the prediction
     try:
-        predictions = model_server.predict(data, data_schema)
+        predictions = model_server.predict(data)
         # Convert from dataframe to CSV
         predictions.to_csv(temp, index=False)
         return FileResponse(temp, media_type="text/csv")
