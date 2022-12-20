@@ -65,7 +65,6 @@ async def infer(input_: dict) -> dict:
 
     try:
         # Do the prediction
-        print(input_)
         data = pd.DataFrame.from_records(input_["instances"])
         print(f"Invoked with {data.shape[0]} records")
         predictions = model_server.predict_to_json(data)
