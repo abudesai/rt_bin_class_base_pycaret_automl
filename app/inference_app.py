@@ -62,7 +62,6 @@ async def infer(input_: dict) -> dict:
     In this sample server, we take data as JSON, convert
     it to a pandas data frame for internal use and then convert the predictions back to JSON .
     """
-
     try:
         # Do the prediction
         data = pd.DataFrame.from_records(input_["instances"])
@@ -85,45 +84,3 @@ async def infer(input_: dict) -> dict:
             "message": f"Exception during inference: {str(err)} (check serve_failure.txt file for more details)",
         }
 
-
-@app.post("/infer_file", tags=["inference", "csv"], response_class=FileResponse)
-async def infer_file(
-    input: UploadFile = File(...), temp=Depends(gen_temp_file)
-) -> Union[FileResponse, dict]:
-    """Do an inference on a single batch of data. In this sample server, we take data as CSV, convert
-    it to a pandas data frame for internal use and then convert the predictions back to CSV (which really
-    just means one prediction per line, since there's a single column.
-    """
-    data = None
-
-    # Convert from CSV to pandas
-    if input.content_type == "text/csv":
-        data = await input.read()
-        temp_io = io.StringIO(data.decode("utf-8"))
-        data = pd.read_csv(temp_io)
-    else:
-        return {
-            "success": False,
-            "message": f"Content type {input.content_type} not supported (only CSV data allowed)",
-        }
-
-    print(f"Invoked with {data.shape[0]} records")
-
-    # Do the prediction
-    try:
-        predictions = model_server.predict(data)
-        # Convert from dataframe to CSV
-        predictions.to_csv(temp, index=False)
-        return FileResponse(temp, media_type="text/csv")
-    except Exception as err:
-        # Write out an error file. This will be returned as the failureReason to the client.
-        trc = traceback.format_exc()
-        with open(failure_path, "w") as s:
-            s.write("Exception during inference: " + str(err) + "\n" + trc)
-        # Printing this causes the exception to be in the training job logs, as well.
-        print("Exception during inference: " + str(err) + "\n" + trc, file=sys.stderr)
-        # A non-zero exit code causes the training job to be marked as Failed.
-        return {
-            "success": False,
-            "message": f"Exception during inference: {str(err)} (check failure file for more details)",
-        }

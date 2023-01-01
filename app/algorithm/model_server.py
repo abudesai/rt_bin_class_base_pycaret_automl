@@ -16,16 +16,12 @@ class ModelServer:
         self.id_field_name = self.data_schema["inputDatasets"][
             "binaryClassificationBaseMainInput"
         ]["idField"]
+        self.model = None
 
     def _get_model(self):
-        try:
+        if self.model is None:
             self.model = classifier.load_model(self.model_path)
-            return self.model
-        except:
-            print(
-                f"No model found to load from {self.model_path}. Did you train the model first?"
-            )
-        return None
+        return self.model
 
     def predict(self, data):
         model = self._get_model()
@@ -62,7 +58,7 @@ class ModelServer:
             pred_obj = {}
             pred_obj[self.id_field_name] = rec[self.id_field_name]
             pred_obj["label"] = rec["__label"]
-            pred_obj["scores"] = {
+            pred_obj["probabilities"] = {
                 str(k): np.round(v, 5)
                 for k, v in rec.items()
                 if k not in [self.id_field_name, "__label"]
